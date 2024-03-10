@@ -68,6 +68,17 @@ public class TestStepDefinitions {
         }
     }
 
+    @Given("I replace values in JSON with empty data:")
+    public void iReplaceValuesInJSONWithEmptyData(Map<String, String> replacements) {
+        for (Map.Entry<String, String> entry : replacements.entrySet()) {
+            if (entry.getValue() != null) {
+                jsonObject.put(entry.getKey(), entry.getValue());
+            }else{
+                jsonObject.isNull(entry.getKey());
+            }
+
+        }
+    }
 
     @When("I send a GET request to {string}")
     public void iSendAGETRequestTo(String endpoint) {
@@ -97,7 +108,7 @@ public class TestStepDefinitions {
 
 
 
-    @Then("the response message should contain {string} {string}")
+    @Then("the response message should contain {string} as {string}")
     public void theResponseMessageShouldContain2(String input, String statusMessage) throws JsonProcessingException {
         // response.then().assertThat().body(org.hamcrest.Matchers.containsString(expectedMessage));
         JsonNode jsonNode;
@@ -106,6 +117,7 @@ public class TestStepDefinitions {
 
         if (respoObject != null) {
             jsonNode = convert(responseEntity2.getBody());
+
             validateNestedStringField(jsonNode, input, statusMessage);
         }
 
@@ -233,11 +245,11 @@ public class TestStepDefinitions {
         if (httpRequest instanceof HttpPost) {
             if (jsonObject != null) {
 
-                System.out.println("Request Body: \n" + jsonObject);
+                System.out.println("Request Body: \n" + jsonObject.toString(4));
                 ((HttpEntityEnclosingRequestBase) httpRequest).setEntity(new StringEntity(jsonObject.toString()));
             } else {
                 assertNotNull(jsonObject);
-                System.out.println("Request Body: \n" + jsonObject);
+                System.out.println("Request Body: \n" + jsonObject.toString(4));
                 ((HttpEntityEnclosingRequestBase) httpRequest).setEntity(new StringEntity(jsonObject.toString()));
             }
         }
