@@ -3,21 +3,20 @@ package StepDefinitions;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import constants.VglenceConstants;
 import io.cucumber.java.Scenario;
 import io.cucumber.java.en.Given;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
-import io.restassured.RestAssured;
-import io.restassured.http.ContentType;
 import io.restassured.response.Response;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpHeaders;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.methods.HttpRequestBase;
+import org.apache.http.client.methods.*;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
@@ -38,7 +37,6 @@ import java.util.Properties;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 
 
 public class TestStepDefinitions {
@@ -50,7 +48,7 @@ public class TestStepDefinitions {
     private int httpResponseStatusCode;
     private String httpResponseStatusMessage;
     private JsonNode jsonResponse;
-
+    JsonNode responseEntity;
     Object respoObject;
     ResponseEntity<String> responseEntity2;
 
@@ -73,149 +71,90 @@ public class TestStepDefinitions {
         for (Map.Entry<String, String> entry : replacements.entrySet()) {
             if (entry.getValue() != null) {
                 jsonObject.put(entry.getKey(), entry.getValue());
-            }else{
+            } else {
                 jsonObject.isNull(entry.getKey());
             }
 
         }
     }
 
-    @When("I send a GET request to {string}")
-    public void iSendAGETRequestTo(String endpoint) {
-        response = RestAssured.get(endpoint);
+    @When("a {} request is sent to the service {} endpoint")
+    public void aPOSTRequestIsSentToTheServicePlotsAPIEndpoint(String httpMethod, String endpointConfiguration) throws IOException {
+        HttpRequestBase httpRequest = buildRequest(httpMethod, endpointConfiguration, null);
+        responseEntity2 = executeHttpRequest(httpRequest);
+    }
+
+    @When("a {} request is sent to the service {} endpoint with {} and {}")
+    public void aGETRequestIsSentToTheServicePlotsAPIEndpoint(String httpMethod, String endpointConfiguration, String field, String value) throws IOException {
+        HttpRequestBase httpRequest = buildRequest(httpMethod, endpointConfiguration, value);
+        responseEntity2 = executeHttpRequest(httpRequest);
     }
 
     @Then("the response code should be {int}")
     public void theResponseCodeShouldBe(int expectedStatusCode) {
-        //  response.then().statusCode(expectedStatusCode);
         assertEquals(expectedStatusCode, httpResponseStatusCode);
-        //       assertEquals(expectedStatusCode,responseEntity);
-
-
     }
-
-
-
-    @Then("the response message should contain {string}")
-    public void theResponseMessageShouldContain(String expectedMessage) throws JsonProcessingException {
-        // response.then().assertThat().body(org.hamcrest.Matchers.containsString(expectedMessage));
-        JsonNode jsonNode = null;
-        assertThat(responseEntity.toString(), notNullValue());
-        // respoObject = responseEntity.getBody();
-        jsonNode = objectMapper.readTree(objectMapper.writeValueAsString(responseEntity));
-
-    }
-
-
 
     @Then("the response message should contain {string} as {string}")
     public void theResponseMessageShouldContain2(String input, String statusMessage) throws JsonProcessingException {
-        // response.then().assertThat().body(org.hamcrest.Matchers.containsString(expectedMessage));
         JsonNode jsonNode;
         assertThat(responseEntity2.toString(), notNullValue());
         respoObject = responseEntity2.getBody();
-
         if (respoObject != null) {
             jsonNode = convert(responseEntity2.getBody());
-
             validateNestedStringField(jsonNode, input, statusMessage);
         }
-
     }
 
     private void validateNestedStringField(JsonNode jsonNode, String field, String value) {
-        String[] keys = field.split("[.]");
-        var jsonValue = jsonNode;
-
-        for (String key : keys) {
-            if (jsonValue.isArray()) {
-                jsonValue = jsonValue.get(Integer.parseInt(key));
-            } else {
-                jsonValue = jsonValue.findValue(key);
+        // Iterate over the "errors" array and assert each "fieldName"
+        JsonNode errorsNode = jsonNode.get("errors");
+        if (errorsNode != null) {
+            Gson gson = new Gson();
+            JsonObject jsonObject = gson.fromJson(String.valueOf(jsonNode), JsonObject.class);
+            JsonArray errorsArray = jsonObject.getAsJsonArray("errors");
+            for (JsonElement element : errorsArray) {
+                JsonObject errorObject = element.getAsJsonObject();
+                JsonElement defaultMessageElement = errorObject.get(field);
+                if (defaultMessageElement != null && defaultMessageElement.getAsString().equals(value)) {
+                    System.out.println("Match found!");
+                }
             }
-            Assertions.assertEquals(value, jsonValue.asText());
+        } else {
+            {
+                String[] keys = field.split("[.]");
+                var jsonValue = jsonNode;
+                for (String key : keys) {
+                    if (jsonValue.isArray()) {
+                        jsonValue = jsonValue.get(Integer.parseInt(key));
+                    } else {
+                        jsonValue = jsonValue.findValue(key);
+                    }
+                    Assertions.assertEquals(value, jsonValue.asText());
+                }
+            }
+
         }
-
-    }
-
-    JsonNode responseEntity;
-
-    @When("a {} request is sent to the service {} endpoint")
-    public void aPOSTRequestIsSentToTheServicePlotsAPIEndpoint(String httpMethod, String endpointConfiguration) throws IOException {
-        HttpRequestBase httpRequest = buildRequest(httpMethod, endpointConfiguration);
-        String url = getTargetUrl(endpointConfiguration);
-        //      responseEntity = this.makeHttpCall(httpMethod, httpRequest, jsonObject, url);
-
-
-        responseEntity2 = executeHttpRequest(httpRequest);
-        System.out.println(responseEntity);
-    }
-
-    private String getTargetUrl(String endpointConfiguration) throws IOException {
-        Properties endpointConfigurationMap = new Properties();
-        String filePath = "src/main/resources/endpoint.properties";
-
-        try (InputStream inputStream = new FileInputStream(filePath)) {
-            endpointConfigurationMap.load(inputStream);
-            String servicePath = (String) endpointConfigurationMap.get(endpointConfiguration);
-            return servicePath;
-        }
-
     }
 
 
-//    private ResponseEntity<String> makeHttpCall(String httpMethod, HttpRequestBase httpRequest, JSONObject jsonObject, String url) throws JsonProcessingException {
-//
-//            if (httpMethod.equalsIgnoreCase("POST")){
-//                responseEntity =
-//                        WebClient.create()
-//                                .post()
-//                                .uri(url)
-//                                .body(Mono.just(jsonObject), String.class)
-//                                .retrieve()
-//                                ///.onStatus(HttpStatusCode::is5xxServerError, error -> Mono.empty())
-//                                //.onStatus()
-//                                .toEntity(String.class)
-//                                .block();
-//            }else if (httpMethod.equalsIgnoreCase("GET")) {
-//                responseEntity = WebClient.create()
-//                        .get()
-//                        .uri(url)
-//                        .retrieve()
-//                        ///.onStatus(HttpStatusCode::is5xxServerError, error -> Mono.empty())
-//                        //.onStatus()
-//                        .toEntity(String.class)
-//                        .block();
-//            }else{
-//                System.out.println("Httep Metho is not supported");
-//            }
-//            Object response = responseEntity != null ? responseEntity.getBody() : null;
-//
-//            jsonResponse = response !=null ? objectMapper.readTree(response.toString()) : null;
-//
-//            System.out.println(" *****Http Headers after API call ******* \n" + responseEntity.getHeaders());
-//
-//            if (jsonResponse !=null){
-//            System.out.println(" *****Response received from Service ******* \n" + jsonResponse.toPrettyString());
-//            }
-//return responseEntity;
+//    private String getTargetUrl(String endpointConfiguration) throws IOException {
+//        Properties endpointConfigurationMap = new Properties();
+//        String filePath = "src/main/resources/endpoint.properties";
+//        try (InputStream inputStream = new FileInputStream(filePath)) {
+//            endpointConfigurationMap.load(inputStream);
+//            String servicePath = (String) endpointConfigurationMap.get(endpointConfiguration);
+//            return servicePath;
+//        }
 //    }
 
-    @When("I send a POST request to {string}")
-    public void iSendAPOSTRequestTo(String endpoint) {
-        response = RestAssured.given().contentType(ContentType.JSON)
-                .body(jsonObject.toString()).post(endpoint);
-    }
+//    private void executeHttpRequest1(HttpRequestBase httpRequest) {
+//
+//        response = RestAssured.given().contentType(ContentType.JSON)
+//                .body(jsonObject.toString()).post(String.valueOf(httpRequest));
+//    }
 
-
-    private void executeHttpRequest1(HttpRequestBase httpRequest) {
-
-        response = RestAssured.given().contentType(ContentType.JSON)
-                .body(jsonObject.toString()).post(String.valueOf(httpRequest));
-    }
-
-
-    private HttpRequestBase buildRequest(String httpMethod, String endpointConfiguration) throws IOException {
+    private HttpRequestBase buildRequest(String httpMethod, String endpointConfiguration, String value) throws IOException {
         HttpRequestBase httpRequest;
         Properties endpointConfigurationMap = new Properties();
         String filePath = "src/main/resources/endpoint.properties";
@@ -229,7 +168,10 @@ public class TestStepDefinitions {
                 httpRequest = new HttpPost((VglenceConstants.getTargetUrl() + servicePath));
                 break;
             case "GET":
-                httpRequest = new HttpPost((VglenceConstants.getTargetUrl() + servicePath));
+                httpRequest = new HttpGet((VglenceConstants.getTargetUrl() + servicePath + value));
+                break;
+            case "DELETE":
+                httpRequest = new HttpDelete((VglenceConstants.getTargetUrl() + servicePath));
                 break;
             default:
                 throw new NotImplementedException("Cannot resolve httpMethod");
@@ -243,32 +185,44 @@ public class TestStepDefinitions {
 
         System.out.println("Sending Request to Target Endpoint: " + httpRequest.toString());
         if (httpRequest instanceof HttpPost) {
-            if (jsonObject != null) {
-
-                System.out.println("Request Body: \n" + jsonObject.toString(4));
-                ((HttpEntityEnclosingRequestBase) httpRequest).setEntity(new StringEntity(jsonObject.toString()));
-            } else {
-                assertNotNull(jsonObject);
-                System.out.println("Request Body: \n" + jsonObject.toString(4));
-                ((HttpEntityEnclosingRequestBase) httpRequest).setEntity(new StringEntity(jsonObject.toString()));
+            try {
+                if (jsonObject != null) {
+                    System.out.println("Request Body: \n" + jsonObject.toString(4));
+                    ((HttpEntityEnclosingRequestBase) httpRequest).setEntity(new StringEntity(jsonObject.toString()));
+                }
+            } catch (NullPointerException e) {
+                System.out.println("JSON Body is empty: \n" + jsonObject.toString(4));
             }
         }
         CloseableHttpResponse closeableHttpResponse = httpClient.execute(httpRequest);
         sleepThread(1000);
         var httpEntity = closeableHttpResponse.getEntity();
+        if (httpEntity != null){
+        if (httpEntity.getContentLength() != 0) {
+            var response = EntityUtils.toString(httpEntity);
 
-       var response = EntityUtils.toString(httpEntity);
+            JSONObject convertResponseString = new JSONObject(convert(response).toString());
+            httpResponseStatusCode = closeableHttpResponse.getStatusLine().getStatusCode();
+            httpResponseStatusMessage = closeableHttpResponse.toString();
+            if (StringUtils.isNoneEmpty(response)) {
+                System.out.println("********** Response Body ************* \n" + convertResponseString.toString(4));
 
-        httpResponseStatusCode = closeableHttpResponse.getStatusLine().getStatusCode();
-        httpResponseStatusMessage = closeableHttpResponse.toString();
-        if (StringUtils.isNoneEmpty(response)) {
-            System.out.println("Response Body: \n" + response.toString());
+            }
+            closeableHttpResponse.close();
+
+            ResponseEntity<String> responseEntity2 = convertS(response);
+            return responseEntity2;
         }
-        closeableHttpResponse.close();
-
-        ResponseEntity<String> responseEntity2 = convertS(response);
-        return responseEntity2;
+        } else {
+            httpResponseStatusCode = closeableHttpResponse.getStatusLine().getStatusCode();
+            System.out.println("**********There is No Response Body ************* \n");
+            return null;
+        }
+        httpResponseStatusCode = closeableHttpResponse.getStatusLine().getStatusCode();
+        System.out.println("**********There is No Response Body ************* \n");
+        return null;
     }
+
 
     private static JsonNode convert(String response) throws JsonProcessingException {
 
@@ -276,21 +230,17 @@ public class TestStepDefinitions {
 
         // Parse String to JsonNode
         JsonNode jsonNode = objectMapper.readTree(response);
-
         return jsonNode;
     }
-
 
     public static ResponseEntity<String> convertS(String content) {
         // Assuming you want to return HTTP status OK (200)
         return ResponseEntity.ok(content);
     }
 
-
     private void sleepThread(long milliseconds) {
         try {
             Thread.sleep(milliseconds);
-
         } catch (InterruptedException e) {
             //           log.info("Exception sleeping method");
             Thread.currentThread().interrupt();

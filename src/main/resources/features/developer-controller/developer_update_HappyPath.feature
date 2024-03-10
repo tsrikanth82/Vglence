@@ -1,5 +1,5 @@
+@Regression
 Feature: Testing Developer Update API Happy Path
-
 
   Scenario Outline: Send a JSON request with <SecID> validate response
     Given I have a JSON request file named "developerUpdate.json"
